@@ -83,8 +83,8 @@ class Reservation(models.Model):
         super().clean()
 
         # Validate that the duration is in 40-minute intervals
-        if self.duration.total_seconds() % 2400 != 0:
-            raise ValidationError("reservations must be in 40-minute intervals.")
+        if self.duration < timedelta(minutes=40):
+            raise ValidationError("Reservations must be at least 40 minutes long.")
 
         # Validate that the duration does not exceed 4 hours (240 minutes)
         if self.duration > timedelta(hours=4):

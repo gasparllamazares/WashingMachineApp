@@ -4,69 +4,77 @@ from rest_framework import status
 from .models import Room, Reservation, Floor
 from datetime import datetime, timedelta, time
 from django.utils import timezone
+import pytz
 
-def get_free_time_intervals_for_floor(floor, date):
-    """
-    Get free time intervals for the entire floor on a specific date.
-    A time interval is only considered free if all rooms on the floor are available.
-    """
-    start_time = time(6, 0)
-    end_time = time(23, 0)
-    interval_minutes = 40
 
-    free_intervals = []
-    current_time = datetime.combine(date, start_time)
-    end_time_dt = datetime.combine(date, end_time)
-
-    # Get all reservations for this floor on the specific date
-    reservations = Reservation.objects.filter(room__floor=floor, reservation_time__date=date)
-
-    reserved_slots = []
-    for reservation in reservations:
-        reserved_time = reservation.reservation_time
-        reserved_end_time = reserved_time + reservation.duration
-        slot_start = reserved_time
-        while slot_start < reserved_end_time:
-            reserved_slots.append(slot_start)
-            slot_start += timedelta(minutes=interval_minutes)
-
-    # Group free slots into intervals
-    temp_interval_start = None
-    while current_time + timedelta(minutes=interval_minutes) <= end_time_dt:
-        if current_time not in reserved_slots:
-            if temp_interval_start is None:
-                temp_interval_start = current_time  # Start a new free interval
-        else:
-            if temp_interval_start is not None:
-                free_intervals.append((temp_interval_start, current_time))  # End the interval
-                temp_interval_start = None
-        current_time += timedelta(minutes=interval_minutes)
-
-    # If there's an ongoing free interval at the end of the day
-    if temp_interval_start is not None:
-        free_intervals.append((temp_interval_start, end_time_dt))
-
-    return free_intervals
-
+from django.utils import timezone
+from datetime import timedelta, datetime, time
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from reservations.models import Reservation, Room
+import pytz
 
 class FloorFreeSlotsView(APIView):
     def get(self, request, floor_id):
-        try:
-            today = timezone.now().date()
-            floor = Floor.objects.get(id=floor_id)
+        # Define Bucharest timezone
+        bucharest_tz = pytz.timezone('Europe/Bucharest')
 
-            free_intervals = get_free_time_intervals_for_floor(floor, today)
+        # Get the current time in Bucharest
+        now = timezone.now().astimezone(bucharest_tz)
 
-            # Format free intervals as a list of dictionaries
-            free_intervals_formatted = [{
-                'start': interval[0].strftime('%H:%M'),
-                'end': interval[1].strftime('%H:%M')
-            } for interval in free_intervals]
+        # Start of this week (Monday 00:00:00 Bucharest time)
+        start_of_this_week = now - timedelta(days=now.weekday())
+        start_of_this_week = start_of_this_week.replace(hour=0, minute=0, second=0, microsecond=0)
 
-            return Response({
-                'floor': floor.floor_number,
-                'free_intervals': free_intervals_formatted
-            }, status=status.HTTP_200_OK)
+        # End of next week (Sunday 23:59:59 Bucharest time)
+        end_of_next_week = start_of_this_week + timedelta(days=13)
+        end_of_next_week = end_of_next_week.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-        except Floor.DoesNotExist:
-            return Response({'error': 'Floor not found.'}, status=status.HTTP_404_NOT_FOUND)
+        # Initialize free slots for the entire floor
+        free_slots = {}
+
+        # Get all rooms on the selected floor
+        rooms = Room.objects.filter(floor_id=floor_id)
+
+        # Collect all reservations across all rooms on the floor
+        reservations = Reservation.objects.filter(
+            room__floor_id=floor_id,
+            reservation_time__gte=start_of_this_week,
+            reservation_time__lte=end_of_next_week
+        ).order_by('reservation_time')
+
+        # Define available hours in a day (6:00 AM to 11:00 PM)
+        start_time = time(6, 0)
+        end_time = time(23, 0)
+
+        # Loop through the days from the start of the current week to the end of next week
+        for day in range(14):  # 14 days from this Monday to the next Sunday
+            current_day = start_of_this_week + timedelta(days=day)
+            current_day_start = datetime.combine(current_day, start_time, tzinfo=bucharest_tz)
+            current_day_end = datetime.combine(current_day, end_time, tzinfo=bucharest_tz)
+
+            # Keep track of free slots for the entire floor for each day
+            free_slots_for_day = []
+
+            # Track the last end time of any reservation
+            last_end_time = current_day_start
+
+            for reservation in reservations:
+                if reservation.reservation_time.date() == current_day.date():
+                    # Calculate the free time before the reservation starts
+                    if reservation.reservation_time > last_end_time:
+                        free_slots_for_day.append(
+                            (last_end_time, reservation.reservation_time)
+                        )
+                    last_end_time = reservation.reservation_time + reservation.duration
+
+            # Check if there is free time after the last reservation of the day
+            if last_end_time < current_day_end:
+                free_slots_for_day.append(
+                    (last_end_time, current_day_end)
+                )
+
+            # Convert datetime.date to string for JSON serialization
+            free_slots[str(current_day.date())] = free_slots_for_day
+
+        return Response(free_slots)

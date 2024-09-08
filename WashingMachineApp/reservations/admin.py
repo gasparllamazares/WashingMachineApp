@@ -152,8 +152,8 @@ class ReservationForm(forms.ModelForm):
         duration = self.cleaned_data['duration']
 
         # Ensure reservation is in 40-minute intervals
-        if duration.total_seconds() % 2400 != 0:
-            raise ValidationError("reservations must be in 40-minute intervals.")
+        if duration < timedelta(minutes=40):
+            raise ValidationError("Reservations must be at least 40 minutes long.")
 
         # Ensure reservation does not exceed 4 hours (this is for single reservation)
         if duration > timedelta(hours=4):
