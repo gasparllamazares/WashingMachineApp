@@ -12,7 +12,7 @@ from django import forms
 from django.contrib import admin
 from .models import Room, Individual
 from django_countries import countries
-
+from django.core.exceptions import ValidationError
 
  # Change the admin site title
 admin.site.site_header = 'Laundry Room Management'
@@ -20,8 +20,8 @@ admin.site.site_header = 'Laundry Room Management'
 # Custom form to allow selecting individuals for a room
 class RoomForm(forms.ModelForm):
     individuals = forms.ModelMultipleChoiceField(
-        queryset=Individual.objects.all(),
-        widget=admin.widgets.FilteredSelectMultiple('Individuals', is_stacked=False),  # Dual list box with search
+        queryset=Individual.objects.filter(room__isnull=True),  # Only show individuals without a room
+        widget=admin.widgets.FilteredSelectMultiple('Individuals', is_stacked=False),
         required=False,
         label='Assigned Individuals',
     )
@@ -34,7 +34,20 @@ class RoomForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if self.instance.pk:
             # Prepopulate the field with users already assigned to this room
+            # Keep the already assigned individuals in the current room available for selection
+            self.fields['individuals'].queryset = Individual.objects.filter(room__isnull=True) | Individual.objects.filter(room=self.instance)
             self.fields['individuals'].initial = Individual.objects.filter(room=self.instance)
+
+    def clean_individuals(self):
+        individuals = self.cleaned_data['individuals']
+        max_occupants = self.instance.max_occupants
+
+        # Check if adding these individuals would exceed the maximum occupants
+        if individuals.count() > max_occupants:
+            raise ValidationError(f"No more than {max_occupants} occupants can be assigned to this room.")
+
+        return individuals
+
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -50,7 +63,6 @@ class RoomForm(forms.ModelForm):
         Individual.objects.filter(room=instance).exclude(id__in=individuals).update(room=None)
 
         return instance
-
 # Custom admin class to display additional information about rooms
 class RoomAdmin(admin.ModelAdmin):
     form = RoomForm  # Use the custom form for multi-select with search
@@ -66,6 +78,10 @@ class RoomAdmin(admin.ModelAdmin):
         return False
     # Add filter to filter rooms by floor
     list_filter = ('floor',)
+
+    def has_delete_permission(self, request, obj=None):
+        # Prevent delete button from appearing
+        return False
 
     # Custom method to display assigned individuals in the list view
     def get_assigned_individuals(self, obj):
@@ -128,6 +144,7 @@ class IndividualAdmin(admin.ModelAdmin):
 
 admin.site.register(Individual, IndividualAdmin)
 admin.site.register(Floor, FloorAdmin)
+admin.site.unregister(Floor)
 admin.site.register(Room, RoomAdmin)
 admin.site.register(WashingMachineRoom, WashingMachineRoomAdmin)
 admin.site.register(Reservation)
