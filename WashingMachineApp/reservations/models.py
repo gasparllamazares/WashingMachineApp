@@ -79,63 +79,87 @@ class Reservation(models.Model):
     reservation_time = models.DateTimeField()
     duration = models.DurationField(default=timedelta(minutes=40))  # Default to 40-minute intervals
 
-    def clean(self):
-        super().clean()
+    def delete(self, user=None, *args, **kwargs):
+        # Check if the reservation has already started
+        if self.reservation_time <= timezone.now():
+            if user == self.individual and not user.is_staff:
+                raise ValidationError("You cannot delete a reservation that has already started.")
 
-        # Validate that the duration is in 40-minute intervals
+    def clean(self):
+        # Call the individual clean methods
+        self.clean_duration()
+        self.clean_overlap()
+        self.clean_weekly_limit()
+        self.clean_past_reservation()
+        self.clean_sunday_reservation()
+        self.clean_working_hours()
+        self.clean_within_valid_weeks()
+
+    def clean_duration(self):
+        """Validate duration is at least 40 minutes and does not exceed 4 hours."""
         if self.duration < timedelta(minutes=40):
             raise ValidationError("Reservations must be at least 40 minutes long.")
 
-        # Validate that the duration does not exceed 4 hours (240 minutes)
         if self.duration > timedelta(hours=4):
-            raise ValidationError("reservations cannot exceed 4 hours (240 minutes).")
+            raise ValidationError("Reservations cannot exceed 4 hours (240 minutes).")
 
+    def clean_overlap(self):
+        """Check for overlapping reservations across all rooms on the same floor."""
+        reservation_end_time = self.reservation_time + self.duration
 
-        # Check if the room has exceeded 4 hours of reservations in the week
-        week_start = self.reservation_time - timedelta(days=self.reservation_time.weekday()) # Start of the week
+        # Get all reservations on the same floor as the current room
+        overlapping_reservations = Reservation.objects.filter(
+            room__floor=self.room.floor,  # Filter by the same floor as the room
+            reservation_time__lt=reservation_end_time,
+            reservation_time__gt=self.reservation_time - self.duration
+        ).exclude(pk=self.pk)
+
+        if overlapping_reservations.exists():
+            raise ValidationError(
+                f"Another room on floor {self.room.floor.floor_number} already has a reservation during this time.")
+
+    def clean_weekly_limit(self):
+        """Ensure the room doesn't exceed 4 hours of reservations per week."""
+        week_start = self.reservation_time - timedelta(days=self.reservation_time.weekday())  # Start of the week
         week_end = week_start + timedelta(days=7)
-        weekly_reservations = Reservation.objects.filter(         # Total reservations for the room in the current week
-
+        weekly_reservations = Reservation.objects.filter(
             room=self.room,
             reservation_time__gte=week_start,
             reservation_time__lt=week_end
         )
         total_reserved_time = sum([res.duration for res in weekly_reservations], timedelta())
-        total_reserved_time += self.duration # Add the current reservation to the total
-        if total_reserved_time > timedelta(hours=4):  # 4 hours (240 minutes)
+        total_reserved_time += self.duration  # Add the current reservation to the total
+
+        if total_reserved_time > timedelta(hours=4):
             raise ValidationError(f"Room {self.room.room_number} cannot have more than 4 hours of reservations per week.")
 
-
-        # Check if the reservation is in the past
+    def clean_past_reservation(self):
+        """Check if the reservation is in the past."""
         if self.reservation_time < timezone.now():
-            raise ValidationError("reservations cannot be made in the past.")
-        # Check if the reservation is on a Sunday
+            raise ValidationError("Reservations cannot be made in the past.")
+
+    def clean_sunday_reservation(self):
+        """Check if the reservation is on a Sunday."""
         if self.reservation_time.weekday() == 6:
-            raise ValidationError("reservations cannot be made on Sundays.")
-        # Check if the reservation is within working hours (6:00 AM to 11:00 PM)
+            raise ValidationError("Reservations cannot be made on Sundays.")
+
+    def clean_working_hours(self):
+        """Check if the reservation is within working hours (6:00 AM to 11:00 PM)."""
         if not time(6, 0) <= self.reservation_time.time() <= time(23, 0):
-            raise ValidationError("reservations can only be made between 6:00 AM and 11:00 PM.")
-        # Get the current time in UTC
-        now = timezone.now()
+            raise ValidationError("Reservations can only be made between 6:00 AM and 11:00 PM.")
 
-        # Define Bucharest timezone
+    def clean_within_valid_weeks(self):
+        """Validate that the reservation is within this week or next week."""
         bucharest_tz = pytz.timezone('Europe/Bucharest')
-
-        # Convert 'now' to Bucharest time
-        now_in_bucharest = now.astimezone(bucharest_tz)
-
-        # Start of this week (Monday 00:00:00 Bucharest time)
+        now_in_bucharest = timezone.now().astimezone(bucharest_tz)
         start_of_this_week = now_in_bucharest - timedelta(days=now_in_bucharest.weekday())
         start_of_this_week = start_of_this_week.replace(hour=0, minute=0, second=0, microsecond=0)
-        # End of next week (Sunday 23:59:59 Bucharest time)
         end_of_next_week = start_of_this_week + timedelta(days=13)
         end_of_next_week = end_of_next_week.replace(hour=23, minute=59, second=59, microsecond=999999)
-        print(f"Start of this week: {start_of_this_week}")
-        print(f"End of next week: {end_of_next_week}")
 
-        # Validate that the reservation is within the range (Monday of this week to Sunday of next week)
         if not (start_of_this_week <= self.reservation_time.astimezone(bucharest_tz) <= end_of_next_week):
             raise ValidationError("Reservations can only be made from Monday of this week to Sunday of next week.")
+
 
     def __str__(self):
         return f"Reservation by {self.individual} for Room {self.room} on {self.reservation_time}"
