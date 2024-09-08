@@ -15,7 +15,7 @@ class Floor(models.Model):
 
 
 class Room(models.Model):
-    floor = models.ForeignKey(Floor, on_delete=models.SET_NULL, null=True, blank=True)
+    floor = models.ForeignKey(Floor, on_delete=models.CASCADE)
     room_number = models.IntegerField()
     max_occupants = models.IntegerField(default=2)
 
@@ -38,7 +38,7 @@ class Room(models.Model):
                 raise ValidationError(f"Room {self.room_number} cannot have more than {self.max_occupants} occupants.")
 
     def __str__(self):
-        return f"Room {self.room_number} on {self.floor}"
+        return f"Room {self.room_number}"
 
     class Meta:
         unique_together = ('floor', 'room_number')
@@ -78,6 +78,14 @@ class Reservation(models.Model):
     individual = models.ForeignKey(Individual, on_delete=models.CASCADE)  # The user making the reservation
     reservation_time = models.DateTimeField()
     duration = models.DurationField(default=timedelta(minutes=40))  # Default to 40-minute intervals
+    created_at = models.DateTimeField(auto_now_add=True)  # Timestamp for when the reservation is created
+    floor = models.ForeignKey(Floor, on_delete=models.SET_NULL, null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        # Auto-populate the floor field from the room
+        if self.room and not self.floor:
+            self.floor = self.room.floor
+        super(Reservation, self).save(*args, **kwargs)
 
     def delete(self, user=None, *args, **kwargs):
         # Check if the reservation has already started

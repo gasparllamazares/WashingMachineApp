@@ -146,7 +146,7 @@ class IndividualAdmin(admin.ModelAdmin):
 class ReservationForm(forms.ModelForm):
     class Meta:
         model = Reservation
-        fields = ['room', 'individual', 'reservation_time', 'duration']
+        fields = ['room', 'individual', 'reservation_time', 'duration',]
 
     def clean_duration(self):
         duration = self.cleaned_data['duration']
@@ -182,8 +182,9 @@ class ReservationAdmin(admin.ModelAdmin):
     form = ReservationForm  # Use the custom form in the admin
 
     # List display and filtering for the Reservation model
-    list_display = ['room', 'individual', 'reservation_time', 'duration']
-    list_filter = ['room', 'reservation_time']
+    list_display = ['room', 'individual', 'floor', 'reservation_time', 'duration', 'created_at',]
+    list_filter = ['floor']
+    search_fields = ['individual__username', 'individual__first_name', 'individual__last_name', 'individual__email', 'individual__national_id', 'room__room_number', 'reservation_time']
 
 
 
