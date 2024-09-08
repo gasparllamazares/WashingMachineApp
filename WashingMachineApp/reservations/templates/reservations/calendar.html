@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <!-- Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- FullCalendar CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.5/main.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fullcalendar/bootstrap@6.1.5/main.min.css" rel="stylesheet">
+
+    <!-- FullCalendar and Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.5/main.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/bootstrap@6.1.5/main.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/daygrid@6.1.5/main.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Room Reservations Calendar</title>
+    <!-- Include the CDN links here -->
+</head>
+<body>
+    <div class="container">
+        <h2>Reservation Calendar</h2>
+        <div id="calendar"></div>
+    </div>
+
+    <!-- Initialize the calendar -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var calendarEl = document.getElementById('calendar');
+
+            var calendar = new FullCalendar.Calendar(calendarEl, {
+                plugins: ['bootstrap', 'dayGrid'],
+                themeSystem: 'bootstrap',
+                events: '/api/floor/3/free_hours/',  // Your Django API that returns the reservations
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,dayGridWeek'
+                }
+            });
+
+            calendar.render();
+        });
+    </script>
+</body>
+</html>
