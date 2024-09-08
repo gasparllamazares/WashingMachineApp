@@ -2,11 +2,16 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.core.exceptions import ValidationError
 from django_countries.fields import CountryField
+from datetime import timedelta
+
+
+
 class Floor(models.Model):
     floor_number = models.IntegerField(unique=True)
 
     def __str__(self):
         return f"Floor {self.floor_number}"
+
 
 class Room(models.Model):
     floor = models.ForeignKey(Floor, on_delete=models.SET_NULL, null=True, blank=True)
@@ -59,6 +64,7 @@ class Individual(AbstractUser):  # Extend Django's User model
     def __str__(self):
         return f'{self.first_name} {self.last_name}'  # Display username and national ID
 
+
 class WashingMachineRoom(models.Model):
     floor = models.ForeignKey(Floor, on_delete=models.SET_NULL, null=True, blank=True)
 
@@ -67,15 +73,46 @@ class WashingMachineRoom(models.Model):
 
 
 class Reservation(models.Model):
-    washing_machine_room = models.ForeignKey(WashingMachineRoom, on_delete=models.CASCADE)
     room = models.ForeignKey(Room, on_delete=models.CASCADE)
+    individual = models.ForeignKey(Individual, on_delete=models.CASCADE)  # The user making the reservation
     reservation_time = models.DateTimeField()
+    duration = models.DurationField(default=timedelta(minutes=40))  # Default to 40-minute intervals
+
+    def clean(self):
+        super().clean()
+
+        # Validate that the duration is in 40-minute intervals
+        if self.duration.total_seconds() % 2400 != 0:
+            raise ValidationError("Reservations must be in 40-minute intervals.")
+
+        # Validate that the duration does not exceed 4 hours (240 minutes)
+        if self.duration > timedelta(hours=4):
+            raise ValidationError("Reservations cannot exceed 4 hours (240 minutes).")
+
+        # Check if the room has exceeded 4 hours of reservations in the week
+        week_start = self.reservation_time - timedelta(days=self.reservation_time.weekday())
+        week_end = week_start + timedelta(days=7)
+
+        # Total reservations for the room in the current week
+        weekly_reservations = Reservation.objects.filter(
+            room=self.room,
+            reservation_time__gte=week_start,
+            reservation_time__lt=week_end
+        )
+
+        total_reserved_time = sum([res.duration for res in weekly_reservations], timedelta())
+
+        # Add the current reservation duration to the total
+        total_reserved_time += self.duration
+
+        if total_reserved_time > timedelta(hours=4):  # 4 hours (240 minutes)
+            raise ValidationError(f"Room {self.room.room_number} cannot have more than 4 hours of reservations per week.")
 
     def __str__(self):
-        return f"Reservation for {self.room} at {self.reservation_time}"
+        return f"Reservation by {self.individual} for Room {self.room} on {self.reservation_time}"
 
-    class Meta:
-        unique_together = ('room', 'reservation_time')
-from django.db import models
+        
+        
+
 
 # Create your models here.
