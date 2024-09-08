@@ -2,8 +2,9 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.core.exceptions import ValidationError
 from django_countries.fields import CountryField
-from datetime import timedelta
-
+from datetime import timedelta, time
+from django.utils import timezone
+import pytz
 
 
 class Floor(models.Model):
@@ -83,30 +84,58 @@ class Reservation(models.Model):
 
         # Validate that the duration is in 40-minute intervals
         if self.duration.total_seconds() % 2400 != 0:
-            raise ValidationError("Reservations must be in 40-minute intervals.")
+            raise ValidationError("reservations must be in 40-minute intervals.")
 
         # Validate that the duration does not exceed 4 hours (240 minutes)
         if self.duration > timedelta(hours=4):
-            raise ValidationError("Reservations cannot exceed 4 hours (240 minutes).")
+            raise ValidationError("reservations cannot exceed 4 hours (240 minutes).")
+
 
         # Check if the room has exceeded 4 hours of reservations in the week
-        week_start = self.reservation_time - timedelta(days=self.reservation_time.weekday())
+        week_start = self.reservation_time - timedelta(days=self.reservation_time.weekday()) # Start of the week
         week_end = week_start + timedelta(days=7)
+        weekly_reservations = Reservation.objects.filter(         # Total reservations for the room in the current week
 
-        # Total reservations for the room in the current week
-        weekly_reservations = Reservation.objects.filter(
             room=self.room,
             reservation_time__gte=week_start,
             reservation_time__lt=week_end
         )
-
         total_reserved_time = sum([res.duration for res in weekly_reservations], timedelta())
-
-        # Add the current reservation duration to the total
-        total_reserved_time += self.duration
-
+        total_reserved_time += self.duration # Add the current reservation to the total
         if total_reserved_time > timedelta(hours=4):  # 4 hours (240 minutes)
             raise ValidationError(f"Room {self.room.room_number} cannot have more than 4 hours of reservations per week.")
+
+
+        # Check if the reservation is in the past
+        if self.reservation_time < timezone.now():
+            raise ValidationError("reservations cannot be made in the past.")
+        # Check if the reservation is on a Sunday
+        if self.reservation_time.weekday() == 6:
+            raise ValidationError("reservations cannot be made on Sundays.")
+        # Check if the reservation is within working hours (6:00 AM to 11:00 PM)
+        if not time(6, 0) <= self.reservation_time.time() <= time(23, 0):
+            raise ValidationError("reservations can only be made between 6:00 AM and 11:00 PM.")
+        # Get the current time in UTC
+        now = timezone.now()
+
+        # Define Bucharest timezone
+        bucharest_tz = pytz.timezone('Europe/Bucharest')
+
+        # Convert 'now' to Bucharest time
+        now_in_bucharest = now.astimezone(bucharest_tz)
+
+        # Start of this week (Monday 00:00:00 Bucharest time)
+        start_of_this_week = now_in_bucharest - timedelta(days=now_in_bucharest.weekday())
+        start_of_this_week = start_of_this_week.replace(hour=0, minute=0, second=0, microsecond=0)
+        # End of next week (Sunday 23:59:59 Bucharest time)
+        end_of_next_week = start_of_this_week + timedelta(days=13)
+        end_of_next_week = end_of_next_week.replace(hour=23, minute=59, second=59, microsecond=999999)
+        print(f"Start of this week: {start_of_this_week}")
+        print(f"End of next week: {end_of_next_week}")
+
+        # Validate that the reservation is within the range (Monday of this week to Sunday of next week)
+        if not (start_of_this_week <= self.reservation_time.astimezone(bucharest_tz) <= end_of_next_week):
+            raise ValidationError("Reservations can only be made from Monday of this week to Sunday of next week.")
 
     def __str__(self):
         return f"Reservation by {self.individual} for Room {self.room} on {self.reservation_time}"

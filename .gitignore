@@ -2,5 +2,6 @@
 /WashingMachineApp/rooms.csv
 /WashingMachineApp/db.sqlite3
 /.idea
+/WashingMachineApp/reservations/migrations
 
 

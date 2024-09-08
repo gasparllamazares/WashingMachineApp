@@ -146,18 +146,18 @@ class IndividualAdmin(admin.ModelAdmin):
 class ReservationForm(forms.ModelForm):
     class Meta:
         model = Reservation
-        fields = ['room', 'reservation_time', 'duration']
+        fields = ['room', 'individual', 'reservation_time', 'duration']
 
     def clean_duration(self):
         duration = self.cleaned_data['duration']
 
         # Ensure reservation is in 40-minute intervals
         if duration.total_seconds() % 2400 != 0:
-            raise ValidationError("Reservations must be in 40-minute intervals.")
+            raise ValidationError("reservations must be in 40-minute intervals.")
 
-        # Ensure reservation does not exceed 4 hours
+        # Ensure reservation does not exceed 4 hours (this is for single reservation)
         if duration > timedelta(hours=4):
-            raise ValidationError("Reservations cannot exceed 4 hours.")
+            raise ValidationError("reservations cannot exceed 4 hours per reservation.")
 
         return duration
 
@@ -166,32 +166,30 @@ class ReservationForm(forms.ModelForm):
         room = cleaned_data.get('room')
         reservation_time = cleaned_data.get('reservation_time')
         duration = cleaned_data.get('duration')
+        individual = cleaned_data.get('individual')
 
-        # Ensure room doesn't exceed 4 hours per week
-        if room and reservation_time and duration:
-            week_start = reservation_time - timedelta(days=reservation_time.weekday())
-            week_end = week_start + timedelta(days=7)
 
-            # Get all reservations for this room in the current week
-            weekly_reservations = Reservation.objects.filter(
-                room=room,
-                reservation_time__gte=week_start,
-                reservation_time__lt=week_end
-            )
 
-            total_reserved_time = sum([res.duration for res in weekly_reservations], timedelta())
-
-            # Add current reservation duration to the total
-            total_reserved_time += duration
-
-            if total_reserved_time > timedelta(hours=4):
-                raise ValidationError(f"Room {room.room_number} cannot exceed 4 hours of reservations in a week.")
+        # Ensure the individual belongs to the room they are trying to reserve
+        if individual and room:
+            if individual.room != room:
+                raise ValidationError(f"Only individuals assigned to Room {room.room_number} can make reservations for this room.")
 
         return cleaned_data
+
+
+class ReservationAdmin(admin.ModelAdmin):
+    form = ReservationForm  # Use the custom form in the admin
+
+    # List display and filtering for the Reservation model
+    list_display = ['room', 'individual', 'reservation_time', 'duration']
+    list_filter = ['room', 'reservation_time']
+
+
 
 admin.site.register(Individual, IndividualAdmin)
 admin.site.register(Floor, FloorAdmin)
 admin.site.unregister(Floor)
 admin.site.register(Room, RoomAdmin)
 admin.site.register(WashingMachineRoom, WashingMachineRoomAdmin)
-admin.site.register(Reservation)
+admin.site.register(Reservation, ReservationAdmin)
