@@ -13,6 +13,7 @@ from django.contrib import admin
 from .models import Room, Individual
 from django_countries import countries
 from django.core.exceptions import ValidationError
+from datetime import timedelta
 
  # Change the admin site title
 admin.site.site_header = 'Laundry Room Management'
@@ -141,6 +142,52 @@ class IndividualAdmin(admin.ModelAdmin):
     list_display = ('username', 'email', 'first_name', 'last_name', 'national_id', 'country', 'room')
     search_fields = ('username', 'email', 'national_id')  # Enable search by national ID
 
+
+class ReservationForm(forms.ModelForm):
+    class Meta:
+        model = Reservation
+        fields = ['room', 'reservation_time', 'duration']
+
+    def clean_duration(self):
+        duration = self.cleaned_data['duration']
+
+        # Ensure reservation is in 40-minute intervals
+        if duration.total_seconds() % 2400 != 0:
+            raise ValidationError("Reservations must be in 40-minute intervals.")
+
+        # Ensure reservation does not exceed 4 hours
+        if duration > timedelta(hours=4):
+            raise ValidationError("Reservations cannot exceed 4 hours.")
+
+        return duration
+
+    def clean(self):
+        cleaned_data = super().clean()
+        room = cleaned_data.get('room')
+        reservation_time = cleaned_data.get('reservation_time')
+        duration = cleaned_data.get('duration')
+
+        # Ensure room doesn't exceed 4 hours per week
+        if room and reservation_time and duration:
+            week_start = reservation_time - timedelta(days=reservation_time.weekday())
+            week_end = week_start + timedelta(days=7)
+
+            # Get all reservations for this room in the current week
+            weekly_reservations = Reservation.objects.filter(
+                room=room,
+                reservation_time__gte=week_start,
+                reservation_time__lt=week_end
+            )
+
+            total_reserved_time = sum([res.duration for res in weekly_reservations], timedelta())
+
+            # Add current reservation duration to the total
+            total_reserved_time += duration
+
+            if total_reserved_time > timedelta(hours=4):
+                raise ValidationError(f"Room {room.room_number} cannot exceed 4 hours of reservations in a week.")
+
+        return cleaned_data
 
 admin.site.register(Individual, IndividualAdmin)
 admin.site.register(Floor, FloorAdmin)
