@@ -1,3 +1,5 @@
+from base64 import encode
+
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.core.exceptions import ValidationError
@@ -32,10 +34,27 @@ class Room(models.Model):
         if not room_number_str.startswith(floor_number_str):
             raise ValidationError(f"Room number {room_number_str} does not match Floor {floor_number_str}.")
 
-        # Validate that the room doesn't exceed its max_occupants limit
+        # Pre-save check: Validate that the room doesn't exceed its max_occupants limit before saving
         if self.pk:  # Ensure that the room has been saved before checking occupants
-            if self.individual_set.count() > self.max_occupants:
-                raise ValidationError(f"Room {self.room_number} cannot have more than {self.max_occupants} occupants.")
+            current_occupants_count = self.individual_set.count()
+
+            if current_occupants_count > self.max_occupants:
+                raise ValidationError(
+                    f"Room {self.room_number} currently exceeds the maximum of {self.max_occupants} occupants.")
+
+    def save(self, *args, **kwargs):
+        # Pre-save check
+        self.clean()
+
+        # Save the room first
+        super().save(*args, **kwargs)
+
+        # Post-save check: Check that the number of occupants does not exceed the max after save
+        current_occupants_count = self.individual_set.count()
+
+        if current_occupants_count > self.max_occupants:
+            raise ValidationError(
+                f"Room {self.room_number} will exceed the maximum of {self.max_occupants} occupants after the save.")
 
     def __str__(self):
         return f"Room {self.room_number}"
@@ -54,13 +73,16 @@ class Individual(AbstractUser):  # Extend Django's User model
             room_number_str = str(self.room.room_number).zfill(3)
             floor_number_str = str(self.room.floor.floor_number)
 
+
             if room_number_str[:1] != floor_number_str:
                 raise ValidationError(
                     f"The selected room {room_number_str} does not match the floor {floor_number_str}.")
 
-        if self.room and self.room.individual_set.count() >= self.room.max_occupants:
-            raise ValidationError(
-                f"The room {self.room.room_number} cannot have more than {self.room.max_occupants} occupants.")
+        if self.room:
+            # Ensure the room doesn't exceed its max occupants limit
+            if self.room.individual_set.exclude(id=self.id).count() >= self.room.max_occupants:
+                raise ValidationError(
+                    f"Room {self.room.room_number} cannot have more than {self.room.max_occupants} occupants.")
 
     def __str__(self):
         return f'{self.first_name} {self.last_name}'  # Display username and national ID
@@ -139,7 +161,8 @@ class Reservation(models.Model):
         total_reserved_time += self.duration  # Add the current reservation to the total
 
         if total_reserved_time > timedelta(hours=4):
-            raise ValidationError(f"Room {self.room.room_number} cannot have more than 4 hours of reservations per week.")
+            raise ValidationError(
+                f"Room {self.room.room_number} cannot have more than 4 hours of reservations per week.")
 
     def clean_past_reservation(self):
         """Check if the reservation is in the past."""
@@ -152,9 +175,9 @@ class Reservation(models.Model):
             raise ValidationError("Reservations cannot be made on Sundays.")
 
     def clean_working_hours(self):
-        """Check if the reservation is within working hours (6:00 AM to 11:00 PM)."""
-        if not time(6, 0) <= self.reservation_time.time() <= time(23, 0):
-            raise ValidationError("Reservations can only be made between 6:00 AM and 11:00 PM.")
+        """Check if the reservation is within working hours (7:00 AM to 11:00 PM)."""
+        if not time(7, 0) <= self.reservation_time.time() <= time(23, 0):
+            raise ValidationError("Reservations can only be made between 7:00 AM and 11:00 PM.")
 
     def clean_within_valid_weeks(self):
         """Validate that the reservation is within this week or next week."""
@@ -168,12 +191,7 @@ class Reservation(models.Model):
         if not (start_of_this_week <= self.reservation_time.astimezone(bucharest_tz) <= end_of_next_week):
             raise ValidationError("Reservations can only be made from Monday of this week to Sunday of next week.")
 
-
     def __str__(self):
         return f"Reservation by {self.individual} for Room {self.room} on {self.reservation_time}"
-
-        
-        
-
 
 # Create your models here.

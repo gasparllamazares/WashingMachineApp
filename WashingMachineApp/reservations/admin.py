@@ -64,6 +64,9 @@ class RoomForm(forms.ModelForm):
         Individual.objects.filter(room=instance).exclude(id__in=individuals).update(room=None)
 
         return instance
+
+
+
 # Custom admin class to display additional information about rooms
 class RoomAdmin(admin.ModelAdmin):
     form = RoomForm  # Use the custom form for multi-select with search
@@ -90,6 +93,8 @@ class RoomAdmin(admin.ModelAdmin):
         return ", ".join([individual.username for individual in individuals])
 
     get_assigned_individuals.short_description = 'Assigned Individuals'
+
+
 
 # Custom admin class to display additional information about floors
 class FloorAdmin(admin.ModelAdmin):
@@ -118,6 +123,8 @@ class FloorAdmin(admin.ModelAdmin):
         return "Reserved" if current_reservations else "Available"
     washing_machine_room_status.short_description = 'Washing Machine Room Status'
 
+
+
 # Custom admin class to disable add, edit, and delete actions for washing machine rooms
 class WashingMachineRoomAdmin(admin.ModelAdmin):
     # Disable add, edit, and delete actions
@@ -134,6 +141,8 @@ class WashingMachineRoomAdmin(admin.ModelAdmin):
     list_display = ('floor',)
     readonly_fields = ('floor',)
 
+
+
 # Custom method to display the status of the washing machine room
 class IndividualAdmin(admin.ModelAdmin):
     # Specify the field order and place national_id and country after last_name
@@ -141,6 +150,7 @@ class IndividualAdmin(admin.ModelAdmin):
 
     list_display = ('username', 'email', 'first_name', 'last_name', 'national_id', 'country', 'room')
     search_fields = ('username', 'email', 'national_id')  # Enable search by national ID
+
 
 
 class ReservationForm(forms.ModelForm):
@@ -176,6 +186,7 @@ class ReservationForm(forms.ModelForm):
                 raise ValidationError(f"Only individuals assigned to Room {room.room_number} can make reservations for this room.")
 
         return cleaned_data
+
 
 
 class ReservationAdmin(admin.ModelAdmin):
