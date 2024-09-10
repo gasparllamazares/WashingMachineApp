@@ -114,6 +114,7 @@ class Reservation(models.Model):
         if self.reservation_time <= timezone.now():
             if user == self.individual and not user.is_staff:
                 raise ValidationError("You cannot delete a reservation that has already started.")
+        super(Reservation, self).delete(*args, **kwargs)  # Actually delete the instance
 
     def clean(self):
         # Call the individual clean methods
@@ -156,7 +157,7 @@ class Reservation(models.Model):
             room=self.room,
             reservation_time__gte=week_start,
             reservation_time__lt=week_end
-        )
+        ).exclude(pk=self.pk)
         total_reserved_time = sum([res.duration for res in weekly_reservations], timedelta())
         total_reserved_time += self.duration  # Add the current reservation to the total
 
@@ -176,9 +177,20 @@ class Reservation(models.Model):
 
     def clean_working_hours(self):
         """Check if the reservation is within working hours (7:00 AM to 11:00 PM)."""
-        if not time(7, 0) <= self.reservation_time.time() <= time(23, 0):
-            raise ValidationError("Reservations can only be made between 7:00 AM and 11:00 PM.")
+        reservation_start_time = self.reservation_time.time()
+        reservation_end_time = (self.reservation_time + self.duration).time()  # Calculate the end time
 
+        start_of_day = time(7, 0)  # Start time (7:00 AM)
+        end_of_day = time(23, 0)  # End time (11:00 PM)
+
+        # Ensure both start time and end time are within working hours
+        if not (start_of_day <= reservation_start_time <= end_of_day):
+            raise ValidationError("Reservations can only start between 7:00 AM and 11:00 PM.")
+
+        if not (start_of_day <= reservation_end_time <= end_of_day):
+            raise ValidationError("Reservations must end by 11:00 PM.")
+
+        
     def clean_within_valid_weeks(self):
         """Validate that the reservation is within this week or next week."""
         bucharest_tz = pytz.timezone('Europe/Bucharest')
