@@ -4,6 +4,10 @@ from .models import Floor, Room, Individual, WashingMachineRoom, Reservation
 from rest_framework import serializers
 from .serializers import FloorSerializer, RoomSerializer, IndividualSerializer, WashingMachineRoomSerializer, ReservationSerializer
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
+from django.utils import timezone
 
 
 class FloorViewSet(viewsets.ModelViewSet):
@@ -51,3 +55,25 @@ class ReservationViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Automatically assign the current user and their room to the reservation
         serializer.save(individual=self.request.user, room=self.request.user.room)
+
+    def perform_update(self, serializer):
+        # Custom logic for updating (if needed), otherwise just save
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        # Get the reservation instance
+        reservation = self.get_object()
+
+        # Check if the current user is the one who created the reservation
+        if reservation.individual != request.user:
+            raise PermissionDenied("You do not have permission to delete this reservation.")
+
+        if reservation.reservation_time <= timezone.now():
+            raise ValidationError("You cannot delete a reservation that has already started or is in the past.")
+
+        # If the user is authorized, proceed with the deletion
+        self.perform_destroy(reservation)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def perform_destroy(self, instance):
+        instance.delete()

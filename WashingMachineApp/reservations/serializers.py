@@ -3,7 +3,7 @@ from django.utils import timezone
 from datetime import timedelta, time
 import pytz
 from .models import Floor, Room, Individual, WashingMachineRoom, Reservation
-
+from rest_framework.exceptions import PermissionDenied
 
 class FloorSerializer(serializers.ModelSerializer):
     class Meta:
@@ -57,6 +57,11 @@ class ReservationSerializer(serializers.ModelSerializer):
 
         reservation_time = data.get('reservation_time')
         duration = data.get('duration')
+
+
+        # Validation: Ensure only the owner can update their reservation
+        if self.instance and self.instance.individual != user:
+            raise PermissionDenied("You do not have permission to update this reservation.")
 
         # Validation 1: Ensure the duration is between 40 minutes and 4 hours
         if duration < timedelta(minutes=40):

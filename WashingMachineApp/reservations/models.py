@@ -1,5 +1,5 @@
 from base64 import encode
-
+import uuid
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.core.exceptions import ValidationError
@@ -96,6 +96,7 @@ class WashingMachineRoom(models.Model):
 
 
 class Reservation(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     room = models.ForeignKey(Room, on_delete=models.CASCADE)
     individual = models.ForeignKey(Individual, on_delete=models.CASCADE)  # The user making the reservation
     reservation_time = models.DateTimeField()
@@ -190,7 +191,7 @@ class Reservation(models.Model):
         if not (start_of_day <= reservation_end_time <= end_of_day):
             raise ValidationError("Reservations must end by 11:00 PM.")
 
-        
+
     def clean_within_valid_weeks(self):
         """Validate that the reservation is within this week or next week."""
         bucharest_tz = pytz.timezone('Europe/Bucharest')
