@@ -67,6 +67,8 @@ class RoomForm(forms.ModelForm):
 
 
 
+
+
 # Custom admin class to display additional information about rooms
 class RoomAdmin(admin.ModelAdmin):
     form = RoomForm  # Use the custom form for multi-select with search
@@ -93,6 +95,20 @@ class RoomAdmin(admin.ModelAdmin):
         return ", ".join([individual.username for individual in individuals])
 
     get_assigned_individuals.short_description = 'Assigned Individuals'
+
+    def get_queryset(self, request):
+        """
+        Restrict rooms view to the floor admin's own floor.
+        """
+        queryset = super().get_queryset(request)
+
+        # Restrict floor admins to their assigned floor
+        if request.user.groups.filter(name='Floor Admins').exists():
+            return queryset.filter(floor=request.user.admin_floor)
+
+        return queryset
+
+
 
 
 
@@ -145,20 +161,54 @@ class WashingMachineRoomAdmin(admin.ModelAdmin):
 
 # Custom method to display the status of the washing machine room
 class IndividualAdmin(admin.ModelAdmin):
-    # Specify the field order and place national_id and country after last_name
-    fields = ['username', 'first_name', 'last_name', 'national_id', 'country', 'email', 'room']
+    fields = ['username', 'first_name', 'last_name', 'national_id', 'country', 'email', 'room', 'groups', 'is_active']
+    list_display = ('username', 'email', 'first_name', 'last_name', 'national_id', 'country', 'room', 'is_active')
+    search_fields = ('username', 'email', 'national_id')
+    filter_horizontal = ['groups']
 
-    list_display = ('username', 'email', 'first_name', 'last_name', 'national_id', 'country', 'room')
-    search_fields = ('username', 'email', 'national_id')  # Enable search by national ID
+    def get_readonly_fields(self, request, obj=None):
+        """
+        Make the 'groups' and 'is_active' fields read-only for floor admins when:
+        - Editing any user (for groups).
+        - Editing their own profile (for is_active).
+        """
+        readonly_fields = super().get_readonly_fields(request, obj)
 
+        # Floor admins cannot modify their own 'is_active' status
+        if obj is not None and request.user == obj and request.user.groups.filter(name='Floor Admins').exists():
+            return readonly_fields + ('is_active', 'groups')
 
+        # Floor admins cannot edit 'groups' for any users
+        if request.user.groups.filter(name='Floor Admins').exists():
+            return readonly_fields + ('groups',)
+
+        return readonly_fields
+
+    def get_form(self, request, obj=None, **kwargs):
+        """
+        If the user is a floor admin, remove the 'groups' field from the form.
+        """
+        form = super().get_form(request, obj, **kwargs)
+        if request.user.groups.filter(name='Floor Admins').exists():
+            form.base_fields.pop('groups', None)  # Remove the 'groups' field for floor admins
+        return form
+
+    def has_delete_permission(self, request, obj=None):
+        """
+        Allow deleting only users on the same floor as the floor admin.
+        """
+        if request.user.groups.filter(name='Floor Admins').exists():
+            if obj and obj.room and obj.room.floor.floor_number == request.user.admin_floor:
+                return True
+            return False
+        return super().has_delete_permission(request, obj)
 
 class ReservationForm(forms.ModelForm):
     class Meta:
         model = Reservation
         fields = ['room', 'individual', 'reservation_time', 'duration',]
 
-    def clean_duration(self):
+    '''def clean_duration(self):
         duration = self.cleaned_data['duration']
 
         # Ensure reservation is in 40-minute intervals
@@ -169,7 +219,7 @@ class ReservationForm(forms.ModelForm):
         if duration > timedelta(hours=4):
             raise ValidationError("reservations cannot exceed 4 hours per reservation.")
 
-        return duration
+        return duration'''
 
     def clean(self):
         cleaned_data = super().clean()
@@ -197,6 +247,27 @@ class ReservationAdmin(admin.ModelAdmin):
     list_filter = ['floor']
     search_fields = ['individual__username', 'individual__first_name', 'individual__last_name', 'individual__email', 'individual__national_id', 'room__room_number', 'reservation_time']
 
+    def get_queryset(self, request):
+        """
+        Restrict reservations view to the floor admin's own floor.
+        """
+        queryset = super().get_queryset(request)
+
+        # Restrict floor admins to their assigned floor
+        if request.user.groups.filter(name='Floor Admins').exists():
+            return queryset.filter(floor=request.user.admin_floor)
+
+        return queryset
+
+
+
+    def has_delete_permission(self, request, obj=None):
+        """
+        Restrict delete permissions to reservations on the floor admin's assigned floor.
+        """
+        if obj is not None and request.user.groups.filter(name='Floor Admins').exists():
+            return obj.floor.floor_number == request.user.admin_floor
+        return super().has_delete_permission(request, obj)
 
 
 admin.site.register(Individual, IndividualAdmin)

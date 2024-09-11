@@ -42,6 +42,7 @@ class Room(models.Model):
                 raise ValidationError(
                     f"Room {self.room_number} currently exceeds the maximum of {self.max_occupants} occupants.")
 
+
     def save(self, *args, **kwargs):
         # Pre-save check
         self.clean()
@@ -67,6 +68,7 @@ class Individual(AbstractUser):  # Extend Django's User model
     room = models.ForeignKey('Room', on_delete=models.SET_NULL, null=True, blank=True)
     country = CountryField(null=True, blank=True)  # Country field from django-countries
     national_id = models.CharField(max_length=50, unique=True, null=True, blank=True)  # National ID/Passport
+    admin_floor = models.IntegerField(null=True, blank=True, help_text="The floor this user administers.")
 
     def clean(self):
         if self.room:
@@ -110,22 +112,22 @@ class Reservation(models.Model):
             self.floor = self.room.floor
         super(Reservation, self).save(*args, **kwargs)
 
-    def delete(self, user=None, *args, **kwargs):
+    '''def delete(self, user=None, *args, **kwargs):
         # Check if the reservation has already started
         if self.reservation_time <= timezone.now():
             if user == self.individual and not user.is_staff:
                 raise ValidationError("You cannot delete a reservation that has already started.")
-        super(Reservation, self).delete(*args, **kwargs)  # Actually delete the instance
+        super(Reservation, self).delete(*args, **kwargs)  # Actually delete the instance'''
 
     def clean(self):
         # Call the individual clean methods
-        self.clean_duration()
+        #self.clean_duration()
         self.clean_overlap()
-        self.clean_weekly_limit()
-        self.clean_past_reservation()
-        self.clean_sunday_reservation()
-        self.clean_working_hours()
-        self.clean_within_valid_weeks()
+        #self.clean_weekly_limit()
+        #self.clean_past_reservation()
+        #self.clean_sunday_reservation()
+        #self.clean_working_hours()
+        #self.clean_within_valid_weeks()
 
     def clean_duration(self):
         """Validate duration is at least 40 minutes and does not exceed 4 hours."""
