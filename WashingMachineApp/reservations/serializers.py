@@ -1,9 +1,14 @@
+import pytz
 from rest_framework import serializers
 from django.utils import timezone
 from datetime import timedelta, time
-import pytz
 from .models import Floor, Room, Individual, WashingMachineRoom, Reservation
 from rest_framework.exceptions import PermissionDenied
+from django.contrib.auth import get_user_model
+from django.db.utils import IntegrityError
+from rest_framework.exceptions import ValidationError
+from rest_framework import serializers
+from .models import Individual, Room
 
 class FloorSerializer(serializers.ModelSerializer):
     class Meta:
@@ -24,6 +29,102 @@ class IndividualSerializer(serializers.ModelSerializer):
         model = Individual
         fields = ['id', 'username', 'first_name', 'last_name', 'national_id', 'room', 'country']
 
+
+# Use the custom Individual model
+Individual = get_user_model()
+
+
+
+
+class IndividualRegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
+    confirm_password = serializers.CharField(write_only=True)
+    room_number = serializers.IntegerField(write_only=True)
+    username = serializers.CharField()
+    email = serializers.EmailField()
+    national_id = serializers.CharField()
+
+    class Meta:
+        model = Individual
+        fields = [
+            'username', 'first_name', 'last_name', 'email', 'password',
+            'confirm_password', 'national_id', 'country', 'room_number'
+        ]
+        extra_kwargs = {
+            'username': {'validators': []},
+            'email': {'validators': []},
+            'national_id': {'validators': []},
+        }
+
+    def validate_email(self, value):
+        email_domain = value.lower().split('@')[-1]
+        if not email_domain.endswith('.upt.ro'):
+            if not email_domain.endswith('.ro'):
+                raise serializers.ValidationError("Please use your UPT email address ending with '.upt.ro'.")
+            else:
+                raise serializers.ValidationError(
+                    "Only email addresses from the 'upt.ro' domain or its subdomains are allowed. "
+                    "If you are a UPT student or staff, please use your institutional email."
+                )
+        return value
+
+    def validate(self, data):
+        # Password and confirm password validation
+        if data['password'] != data['confirm_password']:
+            raise serializers.ValidationError({"detail": "Passwords do not match."})
+
+        # Check if the email already exists (highest priority)
+        if Individual.objects.filter(email=data['email']).exists():
+            raise serializers.ValidationError({"detail": "The email is already registered."})
+
+        # Check if the username already exists
+        if Individual.objects.filter(username=data['username']).exists():
+            raise serializers.ValidationError({"detail": "The username already exists."})
+
+        # Check if the national ID already exists
+        if Individual.objects.filter(national_id=data['national_id']).exists():
+            raise serializers.ValidationError({"detail": "The national ID is already registered."})
+
+        # Validate that the room number exists
+        room_number = data.get('room_number')
+        room = Room.objects.filter(room_number=room_number).first()
+
+        if not room:
+            raise serializers.ValidationError({"detail": "The room number does not exist. Please contact administration."})
+
+        # Check if the room is full
+        if room.individual_set.count() >= room.max_occupants:
+            raise serializers.ValidationError({"detail": "The room is full. Please contact administration."})
+
+        return data
+
+    def create(self, validated_data):
+        # Remove 'confirm_password' and 'room_number' since they're not model fields
+        validated_data.pop('confirm_password', None)
+        room_number = validated_data.pop('room_number', None)
+
+        # Get the Room instance
+        try:
+            room = Room.objects.get(room_number=room_number)
+        except Room.DoesNotExist:
+            raise serializers.ValidationError({'room_number': 'Room does not exist. Please contact administration.'})
+
+        # Assign the room to the user
+        validated_data['room'] = room
+
+        # Extract and remove the password from validated_data
+        password = validated_data.pop('password')
+
+        # Create the user instance without saving to the database yet
+        user = Individual(**validated_data)
+        user.set_password(password)  # Hash the password
+
+        # Set is_active to False
+        user.is_active = False
+
+        user.save()  # Save the user to the database
+
+        return user
 
 class WashingMachineRoomSerializer(serializers.ModelSerializer):
     floor = FloorSerializer(read_only=True)

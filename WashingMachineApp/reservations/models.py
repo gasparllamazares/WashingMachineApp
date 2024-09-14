@@ -69,7 +69,7 @@ class Individual(AbstractUser):  # Extend Django's User model
     country = CountryField(null=True, blank=True)  # Country field from django-countries
     national_id = models.CharField(max_length=50, unique=True, null=True, blank=True)  # National ID/Passport
     admin_floor = models.IntegerField(null=True, blank=True, help_text="The floor this user administers.")
-
+    validated_email = models.BooleanField(default=False, help_text="Set to true when the user's email is verified")
     def clean(self):
         if self.room:
             room_number_str = str(self.room.room_number).zfill(3)

@@ -1,14 +1,14 @@
 from rest_framework import viewsets
 from django.core.exceptions import ValidationError
 from .models import Floor, Room, Individual, WashingMachineRoom, Reservation
-from rest_framework import serializers
-from .serializers import FloorSerializer, RoomSerializer, IndividualSerializer, WashingMachineRoomSerializer, ReservationSerializer
+from .serializers import FloorSerializer, RoomSerializer, IndividualSerializer, WashingMachineRoomSerializer, ReservationSerializer, IndividualRegisterSerializer
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from django.utils import timezone
-
+from rest_framework.views import APIView
+from rest_framework import permissions
 
 class FloorViewSet(viewsets.ModelViewSet):
     queryset = Floor.objects.all()
@@ -33,7 +33,15 @@ class WashingMachineRoomViewSet(viewsets.ModelViewSet):
     serializer_class = WashingMachineRoomSerializer
     permission_classes = [IsAuthenticated]
 
-
+class IndividualRegisterView(APIView):
+    serializer_class = IndividualRegisterSerializer
+    permission_classes = [permissions.AllowAny]  # This allows unauthenticated access
+    def post(self, request):
+        serializer = IndividualRegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Registration successful"}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class ReservationViewSet(viewsets.ModelViewSet):
     serializer_class = ReservationSerializer
